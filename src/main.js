@@ -1,0 +1,47 @@
+import plugin from '../plugin.json';
+import Api from './api.js';
+
+const fs = acode.require('fs');
+const Url = acode.require('url');
+
+class AcodeTreeSitter {
+  async init() {
+    // init main folder
+    if (!(await fs(Api.TREE_SITTER_PATH).exists())) {
+      await fs(Url.dirname(Api.TREE_SITTER_PATH)).createDirectory(
+        Url.basename(Api.TREE_SITTER_PATH)
+      );
+    }
+
+    // init config file
+    if (!(await fs(Api.CONFIG_PATH).exists())) {
+      await fs(Url.dirname(Api.CONFIG_PATH)).createFile(
+        Url.basename(Api.CONFIG_PATH),
+        '{}'
+      );
+    }
+  }
+
+  async destroy() {
+    acode.define('tree-sitter', undefined);
+  }
+}
+
+if (window.acode) {
+  const acodePlugin = new AcodeTreeSitter();
+  acode.setPluginInit(
+    plugin.id,
+    async (baseUrl, $page, { cacheFileUrl, cacheFile }) => {
+      if (!baseUrl.endsWith('/')) {
+        baseUrl += '/';
+      }
+      acodePlugin.baseUrl = baseUrl;
+      await acodePlugin.init($page, cacheFile, cacheFileUrl);
+    }
+  );
+  acode.setPluginUnmount(plugin.id, () => {
+    acodePlugin.destroy();
+  });
+
+  acode.define('tree-sitter', Api);
+}

@@ -1,0 +1,23 @@
+{
+  "name": "acode-treesitter",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "author": "Overskul",
+  "license": "MIT",
+  "dependencies": {
+    "@types/ace": "^0.0.50",
+    "eventemitter3": "^5.0.1",
+    "html-tag-js": "^1.1.41",
+    "minimatch": "^10.0.1",
+    "web-tree-sitter": "^0.25.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "jszip": "^3.10.1"
+  },
+  "scripts": {
+    "dev": "node esbuild.config.mjs --serve",
+    "build": "node esbuild.config.mjs"
+  },
+  "browserslist": "cover 100%,not android < 5"
+}
