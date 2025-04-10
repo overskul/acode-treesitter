@@ -268,6 +268,14 @@ class TreeSitterAPI extends EventEmitter {
       this.emit('error', error);
       return false;
     }
+  },
+  
+ /**
+   * Clear languages and parsers
+   */
+  clear() {
+    this.#parser = {};
+    this.#languages.clear();
   }
 }
 

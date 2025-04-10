@@ -28,13 +28,15 @@ class AcodeTreeSitter {
     const confirmation = await confirm(
       'Warning',
       `Do want to remove installed tree sitter packages (${
-        (await Api.getAvailableLanguages()).length
+        (await Api.getAvailableLanguages()).length || 0
       }) ?`
     );
 
     if (confirmation) {
       await fs(Api.TREE_SITTER_PATH).delete();
     }
+
+    Api.clear();
 
     acode.define('tree-sitter', undefined);
     acode.define('@tree-sitter/language', undefined);
@@ -44,10 +46,9 @@ class AcodeTreeSitter {
 if (window.acode) {
   const acodePlugin = new AcodeTreeSitter();
   acode.setPluginInit(plugin.id, async (baseUrl, $page, { cacheFileUrl, cacheFile }) => {
-    if (!baseUrl.endsWith('/')) {
-      baseUrl += '/';
-    }
+    if (!baseUrl.endsWith('/')) baseUrl += '/';
     acodePlugin.baseUrl = baseUrl;
+
     await acodePlugin.init($page, cacheFile, cacheFileUrl);
   });
   acode.setPluginUnmount(plugin.id, async () => {
