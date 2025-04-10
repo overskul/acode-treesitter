@@ -1,5 +1,6 @@
-import { Parser } from 'web-tree-sitter';
+import plugin from '../plugin.json';
 import Manager from './manager.js';
+import { Parser } from 'web-tree-sitter';
 import EventEmitter from 'eventemitter3';
 
 const fs = acode.require('fs');
@@ -25,8 +26,11 @@ class TreeSitterAPI extends EventEmitter {
     if (this.isInitialized) return;
 
     try {
+      const wasmUrl = await acode.toInternalUrl(
+        Url.join(PLUGIN_DIR, plugin.id, 'tree-sitter.wasm')
+      );
       await Parser.init({
-        locateFile: () => `https://localhost/__cdvfile_files-external__/plugins/x.treesitter/tree-sitter.wasm`
+        locateFile: () => wasmUrl
       });
       this.#config = await this.#loadConfig();
       this.#initialized = true;
@@ -158,14 +162,22 @@ class TreeSitterAPI extends EventEmitter {
   /**
    * Create a new TreeSitter parser for a specific language
    * @param {string} lang - Language identifier
+   * @param {Object} options - Optional parameters
+   * @param {boolean} options.autoLoadGrammar - Force reload parser even if cached
    * @returns {Promise<Parser>} Configured parser instance
    */
-  async createParser(lang) {
+  async createParser(lang, options = {}) {
     await this.waitForInit();
 
     const language = await this.getLanguage(lang);
     if (!language || !language.grammar) {
-      throw new Error(`Cannot create parser: Language ${lang} not available or grammar not loaded`);
+      if (language && options.autoLoadGrammar) {
+        await language.loadGrammar();
+      } else {
+        throw new Error(
+          `Cannot create parser: Language ${lang} not available or grammar not loaded`
+        );
+      }
     }
 
     const parser = new Parser();
@@ -182,11 +194,11 @@ class TreeSitterAPI extends EventEmitter {
    * @param {boolean} options.forceReload - Force reload parser even if cached
    * @returns {Promise<Object>} Syntax tree
    */
-  async parse(lang, code, { forceReload = false }) {
+  async parse(lang, code, options = {}) {
     await this.waitForInit();
 
     try {
-      if (!forceReload && this.#parser[lang]) return this.#parser[lang].parse(code);
+      if (!options.forceReload && this.#parser[lang]) return this.#parser[lang].parse(code);
 
       const parser = await this.createParser(lang);
       this.#parser[lang] = parser;

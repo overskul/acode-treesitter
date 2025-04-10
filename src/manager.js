@@ -9,65 +9,47 @@ export default {
   CDN_URL: 'https://unpkg.com/',
 
   /**
-   * Get a language definition, install it if not exist
+   * Get a language
    * @param {string} lang - Language identifier
-   * @returns {Promise<Language>} Language instance
+   * @returns {Promise<Language|null>} Language instance or null if not found
    */
   async getLanguage(lang) {
     const langPath = Url.join(Api.TREE_SITTER_PATH, lang);
     if (!(await fs(langPath).exists())) return;
 
     try {
-      /**
-       * Recursively traverses a directory and builds an object representation of its contents
-       * @param {string} dirname - Directory name
-       * @param {string} dirPath - Full path to directory
-       * @returns {Object} - Object representation of directory contents
-       */
-      const _walk = async dirPath => {
-        try {
-          const files = await fs(dirPath).lsDir();
-          const dir = {};
+      const files = await fs(langPath).lsDir();
 
-          await Promise.all(
-            files.map(async file => {
-              try {
-                if (file.isDirectory) {
-                  const subDir = await _walk(file.url);
-                  dir[file.name] = subDir;
-                } else {
-                  const content = (await fs(file.url).readFile(this._getFileType(file.url))) || '';
-                  dir[file.name] = content;
-                }
-              } catch (fileErr) {
-                console.warn(
-                  `Skipping ${file.isDirectory ? 'directory' : 'file'} ${file.name}: ${
-                    fileErr.message
-                  }`
-                );
-                dir[file.name] = null;
-              }
-            })
-          );
+      const configFile = files.find(file => file.name === 'tree-sitter.json');
+      if (!configFile) throw new Error(`Missing tree-sitter.json for language ${lang}`);
 
-          return dir;
-        } catch (walkErr) {
-          console.error(`Error walking directory ${dirname}:`, walkErr);
-          return { [dirname]: {} };
-        }
-      };
+      const config = await fs(configFile.url).readFile('json');
+      const wasmFiles = files
+        .filter(file => file.name.endsWith('.wasm'))
+        .reduce(
+          (obj, file) => ({
+            ...obj,
+            [file.name]: file.url
+          }),
+          {}
+        );
 
-      const root = await _walk(langPath);
-      console.log(root)
-      return new Language(
-        lang,
-        JSON.parse(root['tree-sitter.json'] ?? '{}'),
-        Object.entries(root)
-          .filter(([filename]) => filename.endsWith('.wasm'))
-          .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {}),
-        root.queries,
-        false
-      );
+      const queriesDir = files.find(file => file.name === 'queries' && file.isDirectory);
+      let queries = {};
+
+      if (queriesDir) {
+        const queryFiles = await fs(queriesDir.url).lsDir();
+        await Promise.all(
+          queryFiles.map(async file => {
+            if (!file.isDirectory && file.name.endsWith('.scm')) {
+              const content = await fs(file.url).readFile('utf-8');
+              queries[file.name] = content;
+            }
+          })
+        );
+      }
+
+      return new Language(lang, config, wasmFiles, queries, false);
     } catch (error) {
       console.error(`Error loading language ${lang}:`, error);
       throw new Error(`Failed to load language ${lang}: ${error.message}`);
@@ -134,11 +116,11 @@ export default {
   async _download(lang, items) {
     try {
       const metaUrl = `${this.buildUrl(lang)}?meta`;
-      console.log(metaUrl);
-      const fetch = await this._fetch(metaUrl);
-      if (fetch.status !== 200) throw new Error('failed while fetch metadata, code:', fetch.status);
-      const globalMeta = JSON.parse(fetch?.data);
-      console.log(globalMeta);
+      const response = await this._fetch(metaUrl);
+      if (response.status !== 200)
+        throw new Error('failed while fetch metadata, code:', response.status);
+
+      const globalMeta = JSON.parse(response?.data);
       if (!globalMeta || !globalMeta.files)
         throw new Error(`Failed to get global metadata from ${baseUrl}`);
 
@@ -149,22 +131,17 @@ export default {
         if (isDirectory) {
           await fs(dest).createDirectory(pattern.slice(0, -1));
           dest = Url.join(dest, pattern);
-          console.log(dest);
         }
 
         const matchingFiles = globalMeta.files.filter(file => {
           const path = file.path.slice(globalMeta.prefix.length);
-          console.log(path);
           if (isDirectory) return path.startsWith(pattern);
           return minimatch(path, pattern);
         });
 
-        console.log(matchingFiles);
-
         const baseUrl = this.buildUrl(lang, '', globalMeta.version);
         for (const file of matchingFiles) {
           const fileUrl = Url.join(baseUrl, file.path);
-          console.log(fileUrl);
           await this._downloadFile(fileUrl, dest);
         }
       }

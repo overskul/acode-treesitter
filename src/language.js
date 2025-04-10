@@ -1,11 +1,10 @@
-import { Parser } from 'web-tree-sitter';
-
-const log = (...v) => console.log(...v);
+import Api from './api.js';
+import { Language as TSLanguage } from 'web-tree-sitter';
 
 export default class Language {
   #name;
   #config;
-  #wasm;
+  #wasmUrls;
   #queries;
   #grammar;
   #extensions;
@@ -14,21 +13,19 @@ export default class Language {
    * Create a new Language instance
    * @param {string} name - Language identifier
    * @param {Object} config - Language configuration
-   * @param {Object|ArrayBuffer} wasm - WASM binary content
+   * @param {Object|string} wasmUrls - WASM file URLs
    * @param {Object} queries - Query files for syntax highlighting
    * @param {Boolean} isExtension - is Wasm Extension
    */
-  constructor(name, config, wasm, queries, isExtension = false) {
+  constructor(name, config, wasmUrls, queries, isExtension = false) {
     this.#name = name;
     this.#config = config;
-    this.#wasm = wasm;
+    this.#wasmUrls = wasmUrls;
     this.#queries = queries;
     this.#grammar = null;
-    this.#extensions = isExtension ? null : {}; // Explicitly set to null for extensions
+    this.#extensions = isExtension ? null : {};
 
-    console.log(name, isExtension, this.#extensions);
     if (!isExtension) {
-      log('init extensions');
       this.#initializeExtensions();
     }
   }
@@ -37,53 +34,25 @@ export default class Language {
    * Create extension Language objects for each additional WASM file
    */
   #initializeExtensions() {
-    const wasm = this.#wasm;
-    const mainFile = Object.keys(this.#wasm).find(
+    const wasmUrls = this.#wasmUrls;
+    const mainFile = Object.keys(this.#wasmUrls).find(
       filename => this.#getNameFromFilename(filename) === this.#name
     );
 
-    log("mainFile", mainFile);
-
     if (mainFile) {
-      this.#wasm = _toArrayBuffer(this.#wasm[mainFile]);
+      this.#wasmUrls = wasmUrls[mainFile];
     }
 
-    // Now process extensions (after setting main WASM)
-    for (const filename in wasm) {
-      log("filename", filename)
-      // Skip if this is the main file we already processed
+    for (const filename in wasmUrls) {
       if (filename === mainFile) continue;
 
       const extName = this.#getNameFromFilename(filename);
-      console.log(`Creating extension: ${extName} from ${filename}`);
+      const wasmUrl = wasmUrls[filename];
 
-      // Pass ONLY the binary for this extension
-      const wasmBinary = _toArrayBuffer(wasm[filename]);
+      const extension = new Language(extName, this.#config, wasmUrl, this.#queries, true);
 
-      this.#extensions[extName] = new Language(
-        extName,
-        this.#config,
-        wasmBinary, // This should be just the single binary, not the whole object
-        this.#queries,
-        true
-      );
-
-      // Verify
-      console.log(
-        `Created extension ${extName}, isExtension=${this.#extensions[extName].isExtension}`
-      );
+      this.#extensions[extName] = extension;
     }
-
-    // After processing all extensions, replace this.#wasm if it wasn't set yet
-    // if (
-    //   typeof this.#wasm === 'object' &&
-    //   !ArrayBuffer.isView(this.#wasm) &&
-    //   !(this.#wasm instanceof ArrayBuffer)
-    // ) {
-    //   console.warn(`No main WASM found for ${this.#name}, using first available`);
-    //   const firstFile = Object.keys(this.#wasm)[0];
-    //   this.#wasm = _toArrayBuffer(this.#wasm[firstFile]);
-    // }
   }
 
   /**
@@ -114,10 +83,10 @@ export default class Language {
   }
 
   /**
-   * Get WASM binary
+   * Get WASM URL
    */
-  get wasm() {
-    return this.#wasm;
+  get wasmUrl() {
+    return this.#wasmUrls;
   }
 
   /**
@@ -169,11 +138,11 @@ export default class Language {
    */
   async loadGrammar() {
     if (this.isLoaded) return this.#grammar;
-    if (!this.#wasm) throw new Error(`No WASM file available for language '${this.#name}'`);
+    if (!this.#wasmUrls) throw new Error(`No WASM file available for language '${this.#name}'`);
 
     try {
-      const wasmBuffer = _toArrayBuffer(this.#wasm);
-      this.#grammar = await Parser.Language.load(wasmBuffer);
+      const wasmUrl = await acode.toInternalUrl(this.#wasmUrls);
+      this.#grammar = await TSLanguage.load(wasmUrl);
 
       return this.#grammar;
     } catch (error) {
@@ -189,8 +158,4 @@ export default class Language {
     this.#grammar = null;
     return true;
   }
-}
-
-function _toArrayBuffer(v) {
-  return v instanceof ArrayBuffer ? v : new Uint8Array(v).buffer;
 }

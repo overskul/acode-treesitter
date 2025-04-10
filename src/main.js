@@ -1,6 +1,8 @@
 import plugin from '../plugin.json';
 import Api from './api.js';
+import Language from './language.js';
 
+const confirm = acode.require('confirm');
 const fs = acode.require('fs');
 const Url = acode.require('url');
 
@@ -15,33 +17,40 @@ class AcodeTreeSitter {
 
     // init config file
     if (!(await fs(Api.CONFIG_PATH).exists())) {
-      await fs(Url.dirname(Api.CONFIG_PATH)).createFile(
-        Url.basename(Api.CONFIG_PATH),
-        '{}'
-      );
+      await fs(Url.dirname(Api.CONFIG_PATH)).createFile(Url.basename(Api.CONFIG_PATH), '{}');
     }
+
+    acode.define('tree-sitter', Api);
+    acode.define('@tree-sitter/language', Language);
   }
 
   async destroy() {
+    const confirmation = await confirm(
+      'Warning',
+      `Do want to remove installed tree sitter packages (${
+        (await Api.getAvailableLanguages()).length
+      }) ?`
+    );
+
+    if (confirmation) {
+      await fs(Api.TREE_SITTER_PATH).delete();
+    }
+
     acode.define('tree-sitter', undefined);
+    acode.define('@tree-sitter/language', undefined);
   }
 }
 
 if (window.acode) {
   const acodePlugin = new AcodeTreeSitter();
-  acode.setPluginInit(
-    plugin.id,
-    async (baseUrl, $page, { cacheFileUrl, cacheFile }) => {
-      if (!baseUrl.endsWith('/')) {
-        baseUrl += '/';
-      }
-      acodePlugin.baseUrl = baseUrl;
-      await acodePlugin.init($page, cacheFile, cacheFileUrl);
+  acode.setPluginInit(plugin.id, async (baseUrl, $page, { cacheFileUrl, cacheFile }) => {
+    if (!baseUrl.endsWith('/')) {
+      baseUrl += '/';
     }
-  );
-  acode.setPluginUnmount(plugin.id, () => {
-    acodePlugin.destroy();
+    acodePlugin.baseUrl = baseUrl;
+    await acodePlugin.init($page, cacheFile, cacheFileUrl);
   });
-
-  acode.define('tree-sitter', Api);
+  acode.setPluginUnmount(plugin.id, async () => {
+    await acodePlugin.destroy();
+  });
 }
